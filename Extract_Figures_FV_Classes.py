@@ -1,8 +1,28 @@
 """
 This module provides a class-based interface for the functions in the Extract_Figures_FV.py file.
 It is intended to be used as a library to access the functionalities of the original file in a more organized way.
+
+Additionally, it guarantees backward-compatibility with the legacy import statement
+
+    from Class_Data_In_Image import DataInImage
+
+which exists inside *Extract_Figures_FV.py*.
+
+Instead of requiring a physical ``Class_Data_In_Image.py`` file, we register an alias in
+``sys.modules`` that points at the new ``data_in_image`` module **before** we import the
+legacy code.  This way either import path works transparently and we keep the code base DRY.
 """
 
+# ---------------------------------------------------------------------------
+# Ensure legacy module name resolves to the new implementation
+# ---------------------------------------------------------------------------
+import sys
+import importlib
+
+if 'Class_Data_In_Image' not in sys.modules:
+    sys.modules['Class_Data_In_Image'] = importlib.import_module('data_in_image')
+
+# Only now import the heavy legacy module (it will succeed because the alias is ready)
 import Extract_Figures_FV as eff
 
 class ImageProcessing:
@@ -49,9 +69,7 @@ class Plotting:
         """Plots a 3D matrix line for testing purposes."""
         eff.Plot_3D_Matrix_Line_Test(matrix, spine_color, i1, j1, k1, i2, j2, k2)
 
-    def plot_matrix_surface(self, matrix):
-        """Creates a 3D surface plot of the matrix."""
-        eff.Plot_matrix_Surface(matrix)
+    # Note: plot_matrix_surface function removed as it references a non-existent function in Extract_Figures_FV.py
 
 class DataExport:
     def __init__(self):
