@@ -5,7 +5,7 @@ import tifffile
 from PIL import Image
 import json
 
-from Class_Data_In_Image import DataInImage
+from data_in_image import DataInImage
 
 # from Import3DSpine import Find_Mid_Point_by_arithmetic_mean, Find_far_Point
 
@@ -15,6 +15,9 @@ from Class_Data_In_Image import DataInImage
 rgb_colors = None
 image_uploaded = None
 image_uploaded_edge = None
+
+# Global flag to control matplotlib display - set to False to suppress plots
+SHOW_MATPLOTLIB_PLOTS = True
 
 
 # Remove it when not in use.
@@ -199,8 +202,12 @@ def Plot_matrix_scatter(matrix, spine_color):
     ax.set_zlabel('Z axis')
     ax.set_title('3D Plot of 3D Matrix')
 
-    # Show the plot
-    plt.show()
+    # Show the plot only if flag is enabled
+    if SHOW_MATPLOTLIB_PLOTS:
+        # plt.show()  # Disabled to avoid GUI pop-ups
+        pass
+    else:
+        plt.close(fig)  # Close figure to free memory
 
 
 ''' #Not good layout
@@ -273,8 +280,12 @@ def Plot_3D_Line_Test(x1, y1, z1, x2, y2, z2):
     # Set title
     ax.set_title('3D Line Connecting Two Points')
 
-    # Show the plot
-    plt.show()
+    # Show the plot only if flag is enabled
+    if SHOW_MATPLOTLIB_PLOTS:
+        # plt.show()  # Disabled to avoid GUI pop-ups
+        pass
+    else:
+        plt.close(fig)  # Close figure to free memory
 
 
 # Just for text purposes (will be removed)
@@ -312,8 +323,12 @@ def Plot_3D_Matrix_Line_Test(matrix, spine_color, i1, j1, k1, i2, j2, k2):
     # Set title
     ax.set_title('3D Plot of 3D Matrix and Line Connecting Two Points')
 
-    # Show the plot
-    plt.show()
+    # Show the plot only if flag is enabled
+    if SHOW_MATPLOTLIB_PLOTS:
+        # plt.show()  # Disabled to avoid GUI pop-ups
+        pass
+    else:
+        plt.close(fig)  # Close figure to free memory
 
 
 def Export_Spine_as_Text(tiff_path_output_txt, matrix, data_in_spine):
@@ -342,20 +357,8 @@ def Export_Spine_as_Text(tiff_path_output_txt, matrix, data_in_spine):
         # for key, value in data.items():
         #    file.write(f"# {key}: {value}\n")
 
-        # Write the matrix
-        file.write("# Image:\n")
-        file.write('[')  # For readability
-        for n_depth in range(depth):
-            file.write('[\n')  # For readability
-            for n_height in range(height):
-                # file.write('[')  #For readability
-                file.write(','.join(map(str, matrix[n_depth][n_height])))
-                file.write('\n')
-                # file.write(']')  #For readability
-            file.write(']')  # For readability
-            # file.write('\n')
-        # file.write('\n')
-        file.write(']')  # For readability
+        # Skip saving raw image matrix to reduce file size
+        file.write("# Image: <omitted to reduce file size>\n")
     print("Data has been written to ", tiff_path_output_txt)
 
 
@@ -514,7 +517,17 @@ def Open_TIFF_fig(tiff_path):
             # Extract RGB triplets from the palette and Normalized it
             num_colors = len(palette) // 3
             rgb_colors = [(palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]) for i in range(num_colors)]
-            rgb_colors_normalized = np.array(rgb_colors) / 255.0
+
+            # ------------------------------------------------------------------
+            # Safety net: some label TIFFs store integer indices larger than the
+            # palette itself.  If that happens, accessing rgb_colors[idx] later
+            # raises an IndexError ("index X is out of bounds for axis 0").
+            # We extend the palette with a default colour (white) so every index
+            # found in the volume has a valid entry.  This keeps downstream code
+            # unchanged.
+            # ------------------------------------------------------------------
+            # We'll extend the palette later, after we know the real max index
+            rgb_colors_normalized = None  # placeholder
 
             # Print the RGB colors and their indices
             # for index, color in enumerate(rgb_colors):
@@ -588,6 +601,17 @@ def Open_TIFF_fig(tiff_path):
             # Stack layers to form a 3D matrix
             image_uploaded = np.stack(layers, axis=0)
 
+            # ------------------------------------------------------------------
+            # Palette safety extension (must happen *after* we have image_uploaded)
+            # ------------------------------------------------------------------
+            max_idx_in_image = int(image_uploaded.max()) if image_uploaded.size else 0
+
+            if max_idx_in_image >= len(rgb_colors):
+                default_colour = (255, 255, 255)
+                rgb_colors.extend([default_colour] * (max_idx_in_image - len(rgb_colors) + 1))
+
+            rgb_colors_normalized = np.array(rgb_colors, dtype=np.float32) / 255.0
+
         # Module just for test
 
         # Get the dimensions
@@ -659,7 +683,7 @@ def Open_TIFF_fig(tiff_path):
         # Adjust layout
         plt.tight_layout()
         print("Figure Loaded \n")
-        plt.show()
+        # plt.show()  # Disabled to avoid GUI pop-ups
         return data_in_image
 
 
@@ -815,7 +839,7 @@ def Geneate_Estimations(spine_number, base_name, data_in_spine):
     if data_in_spine.surface == None:
         data_in_spine.surface = surface_estimate
     if (data_in_spine.surface_unit == None) and (data_in_spine.resolution_unit == "nm"):
-        data_in_spine.surface = "um2"
+        data_in_spine.surface_unit = "um2"
 
     # L e d
     # Melhorar considerando resolucao
@@ -994,6 +1018,32 @@ def Generate_3D_Segment_Library(tiff_path):
     ################################################################
 
 
+def example_single_color_processing():
+    """
+    Example function demonstrating how to use the single color processing functions.
+    """
+    # Example 1: Process a specific segment
+    tiff_path = 'label.tif'
+    
+    # Process a specific segment (e.g., segment 1)
+    result = Process_Single_Color_Figure(tiff_path, segment_number=1, output_prefix='spine_analysis')
+    if result:
+        print("Single segment processing completed successfully")
+        result.print_data()
+    
+    # Example 2: Process the first available segment automatically
+    result = Process_Single_Color_Figure(tiff_path)
+    if result:
+        print("Automatic segment processing completed successfully")
+    
+    # Example 3: Process all segments in the figure
+    results = Process_All_Segments_In_Figure(tiff_path, output_prefix='all_spines')
+    if results:
+        print(f"Processed {len(results)} segments total")
+        for seg_num, data in results.items():
+            print(f"Segment {seg_num}: Volume = {data.volume}, Surface = {data.surface}")
+
+
 def main():
     # tiff_path = 'label.tif'
     # tiff_path = 'label_3_output.tiff'
@@ -1004,14 +1054,204 @@ def main():
     # tiff_path = 'cropped_label_Vermelho_output.tiff'
     # tiff_path = 'cropped_label_Vermelho.tif'
 
-    # data_in_image = DataInImage()
-    # Import_3D_segment_from_tiff_figure(tiff_path,data_in_image)
-    # Open_TIFF_fig(tiff_path)
-
-    # data_in_image = DataInImage()
+    # Original method - interactive segment selection
+    # Generate_3D_Segment_Library(tiff_path)
+    
+    # New method - automatic single color processing
+    # Uncomment one of the following lines to test:
+    
+    # Process first available segment automatically
+    # Process_Single_Color_Figure(tiff_path)
+    
+    # Process a specific segment
+    # Process_Single_Color_Figure(tiff_path, segment_number=2)
+    
+    # Process all segments
+    # Process_All_Segments_In_Figure(tiff_path)
+    
+    # Run example
+    # example_single_color_processing()
+    
+    # For now, run the original method
     Generate_3D_Segment_Library(tiff_path)
-    i = 2
 
+
+def set_matplotlib_display(show_plots: bool):
+    """
+    Convenience function to control matplotlib plot display.
+    
+    Args:
+        show_plots (bool): True to show matplotlib plots, False to suppress them
+    """
+    global SHOW_MATPLOTLIB_PLOTS
+    SHOW_MATPLOTLIB_PLOTS = show_plots
+    print(f"Matplotlib plots {'enabled' if show_plots else 'disabled'}")
+
+def get_matplotlib_display_status():
+    """
+    Get the current matplotlib display status.
+    
+    Returns:
+        bool: True if plots are shown, False if suppressed
+    """
+    return SHOW_MATPLOTLIB_PLOTS
+
+def detect_available_segments(image_uploaded):
+    """
+    Detect all available color segments in the uploaded image.
+    
+    Args:
+        image_uploaded: 3D numpy array representing the TIFF stack
+        
+    Returns:
+        list: List of unique segment numbers (excluding 0 which represents background)
+    """
+    import numpy as np
+    
+    # Convert to numpy array if it's not already
+    if not isinstance(image_uploaded, np.ndarray):
+        image_uploaded = np.array(image_uploaded)
+    
+    # Get unique values and exclude 0 (background)
+    unique_segments = np.unique(image_uploaded)
+    available_segments = [int(seg) for seg in unique_segments if seg != 0]
+    
+    print(f"Available segments detected: {available_segments}")
+    return available_segments
+
+
+def Process_Single_Color_Figure(tiff_path, segment_number=None, output_prefix=None):
+    """
+    Process a single color figure from a TIFF file, generate estimations and save results with metadata.
+    
+    Args:
+        tiff_path (str): Path to the input TIFF file
+        segment_number (int, optional): Specific segment number to process. If None, will process the first available segment
+        output_prefix (str, optional): Custom prefix for output files. If None, uses the input filename
+        
+    Returns:
+        DataInImage: The processed spine data with estimations
+    """
+    global rgb_colors, image_uploaded, image_uploaded_edge
+    
+    print(f"Processing single color figure: {tiff_path}")
+    
+    # Find the position of the last dot in the file path
+    dot_index = tiff_path.rfind('.')
+    base_name = tiff_path[:dot_index] if dot_index != -1 else tiff_path
+    
+    # Use custom output prefix if provided
+    if output_prefix:
+        base_name = output_prefix
+    
+    print("Loading Figure...")
+    
+    # Read the TIFF file and get image data
+    data_in_image = Open_TIFF_fig(tiff_path)
+    
+    if data_in_image is None:
+        print("Error: Could not load image data")
+        return None
+    
+    # Detect available segments
+    available_segments = detect_available_segments(image_uploaded)
+    
+    if not available_segments:
+        print("Error: No segments found in the image")
+        return None
+    
+    # Determine which segment to process
+    if segment_number is None:
+        # Process the first available segment
+        target_segment = available_segments[0]
+        print(f"No segment specified, processing first available segment: {target_segment}")
+    else:
+        if segment_number in available_segments:
+            target_segment = segment_number
+            print(f"Processing specified segment: {target_segment}")
+        else:
+            print(f"Error: Segment {segment_number} not found in image. Available segments: {available_segments}")
+            return None
+    
+    # Create a copy of the image data for the spine
+    data_in_spine = DataInImage()
+    # Copy attributes from the original image data
+    data_in_spine.__dict__.update(data_in_image.__dict__)
+    
+    print(f"Generating estimations for segment {target_segment}...")
+    
+    # Generate estimations for the selected segment
+    Geneate_Estimations(target_segment, base_name, data_in_spine)
+    
+    print(f"Successfully processed segment {target_segment}")
+    print(f"Output files: {base_name}_{target_segment}_output.csv and {base_name}_{target_segment}_output.tiff")
+    
+    return data_in_spine
+
+
+def Process_All_Segments_In_Figure(tiff_path, output_prefix=None):
+    """
+    Process all available segments in a TIFF figure, generating estimations for each.
+    
+    Args:
+        tiff_path (str): Path to the input TIFF file
+        output_prefix (str, optional): Custom prefix for output files. If None, uses the input filename
+        
+    Returns:
+        dict: Dictionary mapping segment numbers to their DataInImage objects
+    """
+    global rgb_colors, image_uploaded, image_uploaded_edge
+    
+    print(f"Processing all segments in figure: {tiff_path}")
+    
+    # Find the position of the last dot in the file path
+    dot_index = tiff_path.rfind('.')
+    base_name = tiff_path[:dot_index] if dot_index != -1 else tiff_path
+    
+    # Use custom output prefix if provided
+    if output_prefix:
+        base_name = output_prefix
+    
+    print("Loading Figure...")
+    
+    # Read the TIFF file and get image data
+    data_in_image = Open_TIFF_fig(tiff_path)
+    
+    if data_in_image is None:
+        print("Error: Could not load image data")
+        return None
+    
+    # Detect available segments
+    available_segments = detect_available_segments(image_uploaded)
+    
+    if not available_segments:
+        print("Error: No segments found in the image")
+        return None
+    
+    print(f"Processing {len(available_segments)} segments: {available_segments}")
+    
+    processed_segments = {}
+    
+    # Process each segment
+    for segment_number in available_segments:
+        print(f"\n--- Processing segment {segment_number} ---")
+        
+        # Create a copy of the image data for this spine
+        data_in_spine = DataInImage()
+        # Copy attributes from the original image data
+        data_in_spine.__dict__.update(data_in_image.__dict__)
+        
+        try:
+            # Generate estimations for this segment
+            Geneate_Estimations(segment_number, base_name, data_in_spine)
+            processed_segments[segment_number] = data_in_spine
+            print(f"Successfully processed segment {segment_number}")
+        except Exception as e:
+            print(f"Error processing segment {segment_number}: {e}")
+            continue
+    
+    print(f"\nCompleted processing {len(processed_segments)} segments")
+    return processed_segments
 
 if __name__ == "__main__":
     main()

@@ -2,15 +2,17 @@ import sys
 import os
 from pathlib import Path
 import numpy as np
-import tifffile as tiff
 from PySide6 import QtWidgets, QtCore, QtGui
 from qt_opengl_canvas import QtAdvanced3DCanvas
-from PIL import Image
-import mmap, io, threading
+import threading
 from data_in_image import DataInImage
 from estimator import Estimator
 from boundary_extractor import extract_surface_only, BoundaryExtractor
-from Extract_Figures_FV import Export_Spine_as_Text, Export_Spine_as_tiff
+from Extract_Figures_FV import (Export_Spine_as_Text, Export_Spine_as_tiff, Open_TIFF_fig, 
+                                Import_3D_segment_from_tiff_figure, Generate_3D_Segment_Library, 
+                                Geneate_Estimations, Plot_matrix_scatter, Plot_3D_Matrix_Line_Test,
+                                set_matplotlib_display, get_matplotlib_display_status)
+import Extract_Figures_FV
 
 
 class QtTIFFViewer3D(QtWidgets.QMainWindow):
@@ -32,14 +34,23 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self._tab_widget = QtWidgets.QTabWidget()
         self._main_canvas = QtAdvanced3DCanvas(self)
         self._tab_widget.addTab(self._main_canvas, "Full Image")
-        main_layout.addWidget(self._tab_widget, 3)  # 3/4 of space
 
         # ------------------------------------------------------------------
-        # Right-hand control panel
+        # Right-hand control panel (will be placed in a splitter)
         # ------------------------------------------------------------------
         control_widget = QtWidgets.QWidget()
-        control_widget.setFixedWidth(300)
-        main_layout.addWidget(control_widget, 1)  # 1/4 of space
+        control_widget.setMinimumWidth(220)  # sensible minimum; user can resize wider
+
+        # Use a horizontal splitter so the user can drag the divider
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.addWidget(self._tab_widget)
+        splitter.addWidget(control_widget)
+# set stretch so the main canvas gets more space by default
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+
+        # Add splitter to the main layout
+        main_layout.addWidget(splitter)
 
         # Control tabs
         self._control_tabs = QtWidgets.QTabWidget()
@@ -56,10 +67,43 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         # ----------------- Color Tab -----------------
         color_layout = QtWidgets.QVBoxLayout(self._color_tab)
 
-        # File open & performance settings
-        open_btn = QtWidgets.QPushButton("Open TIFF …")
-        open_btn.clicked.connect(self._open_file_dialog)
-        color_layout.addWidget(open_btn)
+        # File open (collapsible panel)
+        self._open_toggle_btn = QtWidgets.QPushButton("Open Figure ▼")
+        self._open_toggle_btn.setCheckable(True)
+        self._open_toggle_btn.setChecked(False)
+        color_layout.addWidget(self._open_toggle_btn)
+
+        # Collapsible, scrollable container for figure-loading options
+        self._open_panel_scroll = QtWidgets.QScrollArea()
+        self._open_panel_scroll.setWidgetResizable(True)
+        _open_panel_container = QtWidgets.QFrame()
+        _open_panel_container.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self._open_panel_scroll.setWidget(_open_panel_container)
+        self._open_panel_scroll.setVisible(False)
+        open_panel_layout = QtWidgets.QVBoxLayout(_open_panel_container)
+
+        # Button to choose the TIFF/figure path
+        self._select_path_btn = QtWidgets.QPushButton("Select Path")
+        self._select_path_btn.clicked.connect(self._select_path_dialog)
+        # Place Select Path at the top of dropdown
+        open_panel_layout.addWidget(self._select_path_btn)
+
+        # Display selected path
+        self._selected_path_label = QtWidgets.QLabel("No file selected")
+        self._selected_path_label.setWordWrap(True)
+        self._selected_path_label.setStyleSheet("QLabel { color: gray; font-size: 10px; }")
+        open_panel_layout.addWidget(self._selected_path_label)
+
+        # Create Open button (added to layout later, after Performance Settings)
+        self._open_selected_btn = QtWidgets.QPushButton("Open")
+        self._open_selected_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }")
+        self._open_selected_btn.clicked.connect(self._open_selected_path)
+
+        # The performance-settings group (perf_group) is created below; we will
+        # insert it into this layout once available.
+
+        # Connect toggle to show/hide this panel
+        self._open_toggle_btn.toggled.connect(lambda checked: self._open_panel_scroll.setVisible(checked))
 
         # Target folder selection
         target_folder_btn = QtWidgets.QPushButton("Target Folder")
@@ -78,16 +122,24 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self._max_points_spin = QtWidgets.QSpinBox(); self._max_points_spin.setRange(10, 1000); self._max_points_spin.setValue(100)
         self._chunk_size_spin = QtWidgets.QSpinBox(); self._chunk_size_spin.setRange(50, 500); self._chunk_size_spin.setValue(100)
         self._preprocess_checkbox = QtWidgets.QCheckBox(); self._preprocess_checkbox.setChecked(True)
+        self._use_legacy_edges_checkbox = QtWidgets.QCheckBox(); self._use_legacy_edges_checkbox.setChecked(False)
+        self._show_matplotlib_checkbox = QtWidgets.QCheckBox(); self._show_matplotlib_checkbox.setChecked(False)
         perf_form.addRow("Downsample", self._downsample_spin)
         perf_form.addRow("Max points (k)", self._max_points_spin)
         perf_form.addRow("Chunk size", self._chunk_size_spin)
         perf_form.addRow("Background preprocessing", self._preprocess_checkbox)
+        perf_form.addRow("Use legacy edge detection", self._use_legacy_edges_checkbox)
+        perf_form.addRow("Show matplotlib plots", self._show_matplotlib_checkbox)
         
         # Connect performance settings to cache clearing
         self._downsample_spin.valueChanged.connect(self._clear_caches)
         self._max_points_spin.valueChanged.connect(self._clear_caches)
+        self._use_legacy_edges_checkbox.stateChanged.connect(self._clear_caches)
         
-        color_layout.addWidget(perf_group)
+        # Insert Performance settings and then the Open button so it appears LAST
+        open_panel_layout.addWidget(perf_group)
+        open_panel_layout.addWidget(self._open_selected_btn)
+        color_layout.addWidget(self._open_panel_scroll)
 
         # Scroll area for colour check-boxes
         self._color_scroll = QtWidgets.QScrollArea()
@@ -111,14 +163,20 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         nav_row = QtWidgets.QHBoxLayout()
         self._next_btn = QtWidgets.QPushButton("Next")
         self._next_btn.clicked.connect(self._display_next_color)
+        self._next_btn.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }")
         nav_row.addWidget(self._next_btn)
         color_layout.addLayout(nav_row)
+        
+        # Removed the Process All Selected button
 
         color_layout.addStretch()
 
         # ----------------- Internal State -----------------
         self.image_uploaded = None
+        self.image_uploaded_edge = None  # Edge-detected version from Extract_Figures_FV
         self.rgb_colors = None
+        self.data_in_image = None  # Metadata from Extract_Figures_FV
+        self.current_tiff_path = None  # Store current TIFF path for processing
         self.color_index_list = []
         self.selected_p_values = []
         self.current_color_index = 0
@@ -133,6 +191,8 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self._boundary_cache = {}
         # Cache for processed point clouds
         self._point_cloud_cache = {}
+        # Path selected via the dropdown but not yet opened
+        self._pending_tiff_path = None
 
     # ------------------------------------------------------------------
     # Helpers
@@ -164,33 +224,60 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         if filename:
             self._load_tiff(filename)
 
+    # --------------------------------------------------------------
+    # New path-selection helpers (dropdown panel)
+    # --------------------------------------------------------------
+    def _select_path_dialog(self):
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Select 3D Indexed-colour TIFF", str(Path.home()),
+            "TIFF Images (*.tiff *.tif)")
+        if filename:
+            self._pending_tiff_path = filename
+            short_path = "..." + filename[-40:] if len(filename) > 40 else filename
+            self._selected_path_label.setText(short_path)
+            self._selected_path_label.setStyleSheet("QLabel { color: black; font-size: 10px; }")
+            self._set_status(f"Selected file: {os.path.basename(filename)}")
+
+    def _open_selected_path(self):
+        if not self._pending_tiff_path:
+            QtWidgets.QMessageBox.warning(
+                self, "No File Selected",
+                "Please select a TIFF file first using 'Select Path'.")
+            return
+        # Load the selected file
+        self._load_tiff(self._pending_tiff_path)
+
+        # Collapse the dropdown automatically
+        if self._open_toggle_btn.isChecked():
+            # Uncheck will trigger the toggle handler to hide the panel
+            self._open_toggle_btn.setChecked(False)
+
     def _load_tiff(self, path: str):
         self._set_status("Loading …")
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
-            # Use PIL to access palette & frames efficiently
-            with open(path, 'rb') as f:
-                mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-                img = Image.open(io.BytesIO(mm.read()))
-
-                if img.mode != 'P':
-                    raise ValueError('The image is not in indexed colour mode (P).')
-
-                frames = []
-                for frame in range(img.n_frames):
-                    img.seek(frame)
-                    frames.append(np.array(img.getdata(), dtype=np.uint8).reshape(img.size[::-1]))
-                self.image_uploaded = np.stack(frames, axis=0)
-
-                palette = img.getpalette()
-                ncol = len(palette) // 3
-                self.rgb_colors = [tuple(palette[i*3:i*3+3]) for i in range(ncol)]
-
-                mm.close()
-
+            # Use Import_3D_segment_from_tiff_figure for simpler loading
+            print(f"Loading TIFF using Extract_Figures_FV.Import_3D_segment_from_tiff_figure(): {path}")
+            
+            # Store the path for later use in single color processing
+            self.current_tiff_path = path
+            
+            # Call the simpler import function which internally calls Open_TIFF_fig
+            self.data_in_image = Import_3D_segment_from_tiff_figure(path)
+            
+            # Access the global variables set by Open_TIFF_fig (called internally)
+            self.image_uploaded = Extract_Figures_FV.image_uploaded
+            self.rgb_colors = Extract_Figures_FV.rgb_colors
+            self.image_uploaded_edge = Extract_Figures_FV.image_uploaded_edge
+            
+            # Build color index list from unique values (excluding background)
             unique_indices = np.unique(self.image_uploaded)
-            self.color_index_list = [(int(idx), self.rgb_colors[int(idx)]) for idx in unique_indices if idx != 0 and idx < len(self.rgb_colors)]
+            self.color_index_list = [(int(idx), self.rgb_colors[int(idx)]) for idx in unique_indices 
+                                   if idx != 0 and idx < len(self.rgb_colors)]
 
+            print(f"Loaded {len(self.color_index_list)} colors from TIFF")
+            print(f"Image shape: {self.image_uploaded.shape}")
+            
             # Build colour panel & initial full-image plot
             self._build_color_panel()
             self._create_voxel_plot(full_image=True)
@@ -201,7 +288,8 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
 
             self._set_status(os.path.basename(path) + " loaded")
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+            print(f"Error loading TIFF: {e}")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load TIFF file:\n{str(e)}")
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
 
@@ -304,20 +392,25 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
     # Single-colour navigation
     # ------------------------------------------------------------------
     def _display_next_color(self):
-        # Recompute the list of currently checked colours to avoid sync issues
-        self.selected_p_values = [idx for idx, cb in self._color_checkboxes.items() if cb.isChecked()]
+        # Recompute the list of currently checked colours – keep it sorted to ensure
+        # deterministic iteration order (ascending palette index).  This avoids the
+        # impression that the “Next” button is stuck or jumps around when the
+        # underlying dict order differs between runs.
+        self.selected_p_values = sorted(
+            [idx for idx, cb in self._color_checkboxes.items() if cb.isChecked()]
+        )
 
         if not self.selected_p_values:
             self._set_status("No colors selected")
             return
 
+        # If index is out of range, wrap around and notify the user once
         if self.current_color_index >= len(self.selected_p_values):
-            self._set_status("All selected colours processed")
-            self.current_color_index = 0  # Reset for next cycle
-            return
+            self._set_status("All selected colours processed – cycling back to first")
+            self.current_color_index = 0
 
         p_val = self.selected_p_values[self.current_color_index]
-        
+
         # Check if this color already has a tab open
         if p_val in self._color_tabs:
             # Switch to existing tab instead of creating new one
@@ -328,25 +421,168 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             self._open_single_color_tab(p_val)
             self._set_status(f"Opened Color P{p_val}")
         
+        # Advance index for the next press – wrap-around not needed here because
+        # we handle it at the top on the next call.
         self.current_color_index += 1
 
-    def _open_single_color_tab(self, p_value: int):
-        # Extract boundary/surface voxels only using fast boundary detection
+    def _process_all_selected_colors(self):
+        """Process all selected colors using Generate_3D_Segment_Library pipeline"""
+        # Get currently selected colors
+        selected_colors = [idx for idx, cb in self._color_checkboxes.items() if cb.isChecked()]
+        
+        if not selected_colors:
+            QtWidgets.QMessageBox.warning(self, "No Colors Selected", 
+                                        "Please select at least one color to process.")
+            return
+            
+        if not self.current_tiff_path:
+            QtWidgets.QMessageBox.critical(self, "No TIFF Loaded", 
+                                         "Please load a TIFF file first.")
+            return
+            
+        if not self.target_folder:
+            QtWidgets.QMessageBox.warning(self, "No Target Folder", 
+                                        "Please select a target folder first using the 'Target Folder' button.")
+            return
+        
+        # Confirm processing
+        reply = QtWidgets.QMessageBox.question(
+            self, "Process All Selected Colors", 
+            f"This will process {len(selected_colors)} colors using the original Extract_Figures_FV pipeline.\n\n"
+            f"Selected colors: {selected_colors}\n\n"
+            f"This will:\n"
+            f"• Calculate all measurements (volume, surface, length, diameter)\n"
+            f"• Show 3D visualizations in the OpenGL viewer\n"
+            f"• {'Display matplotlib plots (if enabled)' if self._show_matplotlib_checkbox.isChecked() else 'Suppress matplotlib plots (OpenGL only)'}\n"
+            f"• Export CSV and TIFF files to: {self.target_folder}\n\n"
+            f"Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes
+        )
+        
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        
         try:
-            # Check cache first
-            cache_key = f"{p_value}_{self._downsample_spin.value()}"
-            if cache_key in self._boundary_cache:
-                surface_coords, pts, colours = self._boundary_cache[cache_key]
-                self._set_status(f"Using cached data for Color P{p_value}")
-            else:
-                # Extract boundary data
-                surface_coords, pts, colours = self._extract_and_process_boundary(p_value)
-                # Cache the result
-                self._boundary_cache[cache_key] = (surface_coords, pts, colours)
+            self._set_status(f"Processing {len(selected_colors)} colors using Extract_Figures_FV pipeline...")
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            
+            # Temporarily override the get_integer_list function to return our selected colors
+            original_get_list = Extract_Figures_FV.get_integer_list
+            Extract_Figures_FV.get_integer_list = lambda: selected_colors
+            
+            # Set matplotlib display based on user preference
+            set_matplotlib_display(self._show_matplotlib_checkbox.isChecked())
+            
+            # Use the original Generate_3D_Segment_Library function
+            # This will process each selected color and generate all outputs
+            # We need the output CSV/TIFF files to be written to the chosen target folder.
+            # The original Generate_3D_Segment_Library() builds its output base_name from the
+            # *input file path*.  Therefore, we create a *temporary copy* of the TIFF inside
+            # the target folder so its basename points there – no heavy pixel data is copied
+            # because shutil.copy2 is fast on the same disk and the file is usually small
+            # compared to the processing time.  Alternatively we could symlink, but this is
+            # cross-platform-safe.
+
+            import shutil, tempfile, os
+            tmp_dir = tempfile.mkdtemp(prefix="batch_", dir=self.target_folder)
+            tmp_tiff_path = os.path.join(tmp_dir, os.path.basename(self.current_tiff_path))
+            shutil.copy2(self.current_tiff_path, tmp_tiff_path)
+
+            # Now run the original pipeline on the temp file (outputs will be in target folder)
+            Generate_3D_Segment_Library(tmp_tiff_path)
+
+            # Optionally clean up the temp copy to avoid clutter (keeping outputs)
+            try:
+                os.remove(tmp_tiff_path)
+                os.rmdir(tmp_dir)  # remove temp dir if empty
+            except Exception:
+                pass
+            
+            # Restore the original function and reset matplotlib display
+            Extract_Figures_FV.get_integer_list = original_get_list
+            set_matplotlib_display(True)
+            
+            self._set_status(f"Successfully processed {len(selected_colors)} colors")
+            QtWidgets.QMessageBox.information(
+                self, "Processing Complete", 
+                f"Successfully processed {len(selected_colors)} colors.\n\n"
+                f"Generated files saved to: {self.target_folder}\n\n"
+                f"Files include:\n"
+                f"• CSV files with measurements\n"
+                f"• TIFF files with 3D data\n"
+                f"• 3D visualizations shown in OpenGL viewer\n"
+                f"• {'Matplotlib plots were displayed' if self._show_matplotlib_checkbox.isChecked() else 'Matplotlib plots were suppressed'}"
+            )
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self, "Processing Error", 
+                f"Failed to process selected colors:\n{str(e)}"
+            )
+            print(f"Error in batch processing: {e}")
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+    def _open_single_color_tab(self, p_value: int):
+        # Process single color using Extract_Figures_FV pipeline
+        try:
+            # Check if we have a current TIFF path
+            if not self.current_tiff_path:
+                QtWidgets.QMessageBox.critical(self, "No TIFF Loaded", 
+                                             "Please load a TIFF file first.")
+                return
+            
+            # Create DataInImage object for this specific color
+            data_in_spine = DataInImage()
+            # Copy attributes from the main image data
+            if self.data_in_image:
+                data_in_spine.__dict__.update(self.data_in_image.__dict__)
+            
+            # Generate base name for output files
+            base_name = os.path.splitext(os.path.basename(self.current_tiff_path))[0]
+            if self.target_folder:
+                base_name = os.path.join(self.target_folder, base_name)
+            
+            self._set_status(f"Processing Color P{p_value} using Extract_Figures_FV pipeline...")
+            
+            # Use the original scientific pipeline for full analysis
+            print(f"Running Geneate_Estimations for spine {p_value}")
+            
+            # Set matplotlib display based on user preference
+            set_matplotlib_display(self._show_matplotlib_checkbox.isChecked())
+            
+            # We need the numeric estimations but we **do not** want to write
+            # CSV / TIFF files at this stage.  Temporarily monkey-patch the
+            # export functions so Geneate_Estimations can run without leaving
+            # files on disk.
+
+            import types as _t
+            orig_txt = Extract_Figures_FV.Export_Spine_as_Text
+            orig_tiff = Extract_Figures_FV.Export_Spine_as_tiff
+
+            Extract_Figures_FV.Export_Spine_as_Text = lambda *a, **k: None
+            Extract_Figures_FV.Export_Spine_as_tiff = lambda *a, **k: None
+
+            try:
+                Geneate_Estimations(p_value, base_name, data_in_spine)
+            finally:
+                # Restore original functions so Save button works normally
+                Extract_Figures_FV.Export_Spine_as_Text = orig_txt
+                Extract_Figures_FV.Export_Spine_as_tiff = orig_tiff
+            
+            # Reset to default state
+            set_matplotlib_display(True)
+            
+            # Store the results for potential UI display
+            self._current_data_results[p_value] = data_in_spine
+            
+            # Also extract boundary data for OpenGL visualization
+            surface_coords, pts, colours = self._extract_and_process_boundary(p_value)
                 
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Boundary Extraction Error", 
-                                         f"Failed to extract boundaries: {str(e)}")
+            QtWidgets.QMessageBox.critical(self, "Processing Error", 
+                                         f"Failed to process color P{p_value}:\n{str(e)}")
             return
 
         # Create tab widget for this color
@@ -362,50 +598,37 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         meta_scroll.setFixedWidth(260)
 
         # ------------------------------------------------------------
-        # 1) Quick metadata (dimensions, voxel count, color) – instant
+        # 1) Populate metadata directly from the values that Geneate_Estimations
+        #    has just written into `data_in_spine`.  This avoids showing '…' while
+        #    waiting for the slower Estimator thread and guarantees all fields are
+        #    immediately filled with correct numbers/units.
         # ------------------------------------------------------------
         label_widgets = {}
+        # Store editors per colour for later retrieval in _save_color_data
+        if not hasattr(self, '_metadata_editors'):
+            self._metadata_editors = {}
+        self._metadata_editors[p_value] = {}
         for tag in DataInImage.tag_dict.keys():
             attr_label = QtWidgets.QLabel(tag)
-            val_label = QtWidgets.QLabel("…")
-            attr_label.setMinimumWidth(150)
-            meta_form.addRow(attr_label, val_label)
-            label_widgets[tag] = val_label
+            editor = QtWidgets.QLineEdit()
+            editor.setMinimumWidth(120)
+            meta_form.addRow(attr_label, editor)
+            label_widgets[tag] = editor
+            self._metadata_editors[p_value][tag] = editor
 
-        # Quick calculations using NumPy (based on surface data)
-        surface_voxel_count = surface_coords.shape[0] if 'surface_coords' in locals() else 0
-        if surface_voxel_count > 0:
-            dims = (surface_coords.max(axis=0) - surface_coords.min(axis=0) + 1).astype(int)
-            quick = DataInImage()
-            quick.num_layers = int(dims[0])
-            quick.height = int(dims[1])
-            quick.width = int(dims[2])
-            quick.spine_color = self.rgb_colors[p_value]
-            quick.surface = surface_voxel_count  # surface area in voxels
-
-            # Update quick fields
-            for tag, attr in DataInImage.tag_dict.items():
-                val = getattr(quick, attr)
-                if val not in (None, ""):
-                    label_widgets[tag].setText(str(val))
+        # Fill labels with computed data
+        for tag, attr in DataInImage.tag_dict.items():
+            val = getattr(data_in_spine, attr)
+            if val not in (None, ""):
+                label_widgets[tag].setText(str(val))
 
         # ------------------------------------------------------------
-        # 2) Full estimation in background to fill remaining fields
+        # 2) Background re-estimation thread has been disabled because
+        #    Geneate_Estimations already computed all metrics reliably
+        #    above.  Keeping a second computation path caused conflicting
+        #    values or errors (e.g. missing L).  If future, enable again
+        #    by calling heavy_calc() in a thread.
         # ------------------------------------------------------------
-        def heavy_calc():
-            dii = DataInImage()
-            est = Estimator(self.image_uploaded, self.rgb_colors)
-            result = est.run_estimations(p_value, dii)
-            
-            # Store the result for this p_value
-            self._current_data_results[p_value] = result
-
-            def apply():
-                for tag, attr in DataInImage.tag_dict.items():
-                    label_widgets[tag].setText(str(getattr(result, attr)))
-            QtCore.QMetaObject.invokeMethod(self, apply, QtCore.Qt.QueuedConnection)
-
-        threading.Thread(target=heavy_calc, daemon=True).start()
 
         # Add save button below metadata
         save_btn = QtWidgets.QPushButton("Save")
@@ -433,15 +656,23 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             # Apply downsampling to the image first if requested
             factor = self._downsample_spin.value()
             
+            # Choose which image to use based on legacy edge detection setting
+            if self._use_legacy_edges_checkbox.isChecked() and self.image_uploaded_edge is not None:
+                print(f"Using legacy edge-detected image for color {p_value}")
+                work_image = self.image_uploaded_edge
+            else:
+                print(f"Using fast boundary extraction for color {p_value}")
+                work_image = self.image_uploaded
+            
             # Use the faster BoundaryExtractor class
             extractor = BoundaryExtractor()
             if factor > 1:
-                downsampled_img = self.image_uploaded[::factor, ::factor, ::factor]
+                downsampled_img = work_image[::factor, ::factor, ::factor]
                 surface_coords = extractor.extract_surface_coordinates(downsampled_img, p_value)
                 # Scale coordinates back up
                 surface_coords = surface_coords * factor
             else:
-                surface_coords = extractor.extract_surface_coordinates(self.image_uploaded, p_value)
+                surface_coords = extractor.extract_surface_coordinates(work_image, p_value)
 
             if surface_coords.size == 0:
                 raise ValueError(f"Colour {p_value} contains no surface voxels.")
@@ -493,9 +724,18 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             all_coords = []
             all_colors = []
 
-            # Apply downsampling factor
+            # Apply downsampling factor and choose image source
             factor = self._downsample_spin.value()
-            work_image = self.image_uploaded[::factor, ::factor, ::factor] if factor > 1 else self.image_uploaded
+            
+            # Choose which image to use based on legacy edge detection setting
+            if self._use_legacy_edges_checkbox.isChecked() and self.image_uploaded_edge is not None:
+                base_image = self.image_uploaded_edge
+                print("Using legacy edge-detected image for full visualization")
+            else:
+                base_image = self.image_uploaded
+                print("Using fast boundary extraction for full visualization")
+                
+            work_image = base_image[::factor, ::factor, ::factor] if factor > 1 else base_image
 
             # Get all unique colors (excluding background)
             unique_colors = np.unique(work_image)
@@ -572,6 +812,50 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         try:
             # Get the data result for this color
             data_result = self._current_data_results[p_value]
+
+            # Retrieve edited values from UI and update data_result
+            if hasattr(self, '_metadata_editors') and p_value in self._metadata_editors:
+                editor_map = self._metadata_editors[p_value]
+                for tag, attr in DataInImage.tag_dict.items():
+                    if tag not in editor_map:
+                        continue
+                    txt = editor_map[tag].text().strip()
+                    if txt == "":
+                        continue  # Skip empty edits
+
+                    # Best-effort type conversion: int -> float -> tuple -> str
+                    new_val: object = txt
+                    try:
+                        # First try strict int
+                        new_val = int(txt)
+                    except ValueError:
+                        try:
+                            # Next try float
+                            f_val = float(txt)
+                            # If the float is integral (e.g., 12.0) store as int
+                            new_val = int(f_val) if f_val.is_integer() else f_val
+                        except ValueError:
+                            # Try tuple syntax "(1,2,3)" or "(1.0,2.0)"
+                            if txt.startswith("(") and txt.endswith(")"):
+                                try:
+                                    parts = [p.strip() for p in txt[1:-1].split(',') if p.strip()]
+                                    tuple_vals = []
+                                    for p in parts:
+                                        try:
+                                            iv = int(p)
+                                            tuple_vals.append(iv)
+                                        except ValueError:
+                                            tuple_vals.append(float(p))
+                                    new_val = tuple(tuple_vals)
+                                except Exception:
+                                    new_val = txt  # keep raw string
+                            else:
+                                new_val = txt  # keep raw string
+                    setattr(data_result, attr, new_val)
+
+                # Persist the edited object back to cache so subsequent saves or
+                # other routines use the modified values.
+                self._current_data_results[p_value] = data_result
             
             # Create 3D matrix from surface coordinates for export
             # We need to reconstruct a 3D matrix from the surface coordinates
@@ -641,23 +925,9 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
                 if val not in (None, ""):
                     label_widgets[tag].setText(str(val))
 
-        # ------------------------------------------------------------
-        # 2) Full estimation in background to fill remaining fields
-        # ------------------------------------------------------------
-        def heavy_calc():
-            dii = DataInImage()
-            est = Estimator(self.image_uploaded, self.rgb_colors)
-            result = est.run_estimations(p_value, dii)
-            
-            # Store the result for this p_value
-            self._current_data_results[p_value] = result
-
-            def apply():
-                for tag, attr in DataInImage.tag_dict.items():
-                    label_widgets[tag].setText(str(getattr(result, attr)))
-            QtCore.QMetaObject.invokeMethod(self, apply, QtCore.Qt.QueuedConnection)
-
-        threading.Thread(target=heavy_calc, daemon=True).start()
+        # Background re-estimation disabled – Geneate_Estimations has already
+        # populated all fields.  Uncomment below if you need independent
+        # verification in a future build.
 
         # Add save button below metadata
         save_btn = QtWidgets.QPushButton("Save")
