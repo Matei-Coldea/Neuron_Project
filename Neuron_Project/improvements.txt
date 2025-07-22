@@ -1,0 +1,7 @@
+10 July 2025
+- make the fucking boundary work !!!
+- add metadata panel for the initial figure (changable) and a save button for the initial figure with the new metadata
+- make it be able to open multiple figure and batches at once like a text editor with tabs and make memory check for that 
+so it does not use too much memory 
+- add maybe a settings panel where to save that 
+- make everything faster

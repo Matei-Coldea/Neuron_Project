@@ -577,8 +577,24 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             # Store the results for potential UI display
             self._current_data_results[p_value] = data_in_spine
             
-            # Also extract boundary data for OpenGL visualization
-            surface_coords, pts, colours = self._extract_and_process_boundary(p_value)
+            # ------------------------------------------------------------------
+            # Merge interior voxels with "connection" voxels (matrix value 2)
+            # ------------------------------------------------------------------
+            conn_coords = None
+            if hasattr(data_in_spine, "spine_matrix") and hasattr(data_in_spine, "bbox_min_ijk"):
+                # Ensure we have a NumPy array so comparisons yield an array, not a single bool
+                spine_mat_np = np.asarray(data_in_spine.spine_matrix)
+                conn_mask = (spine_mat_np == 2)
+                if conn_mask.sum() > 0:
+                    k_idx, i_idx, j_idx = np.nonzero(conn_mask)
+                    conn_coords = np.column_stack((k_idx, i_idx, j_idx)).astype(np.int32)
+                    # Translate from local matrix space (with +1 padding) to absolute
+                    i_min, j_min, k_min = data_in_spine.bbox_min_ijk
+                    conn_coords[:, 0] = conn_coords[:, 0] - 1 + k_min  # depth (k)
+                    conn_coords[:, 1] = conn_coords[:, 1] - 1 + i_min  # row   (i)
+                    conn_coords[:, 2] = conn_coords[:, 2] - 1 + j_min  # col   (j)
+
+            surface_coords, pts, colours = self._extract_segment_voxels(p_value, extra_coords=conn_coords)
                 
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Processing Error", 
@@ -700,6 +716,65 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             
             return surface_coords, pts, colours
 
+        except Exception as e:
+            raise e
+
+    def _extract_segment_voxels(self, p_value: int, extra_coords: np.ndarray | None = None):
+        """Return full-volume voxel coordinates for a given colour and prepare them for OpenGL display.
+        The logic mirrors _extract_and_process_boundary but uses the entire mask rather than just the
+        surface voxels.  Down-sampling and point-limit handling are preserved.
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray, np.ndarray]
+            (raw_coords[k,i,j], pts[x,y,z] centred/scaled, colours[r,g,b])
+        """
+        try:
+            # Down-sample factor specified by the UI
+            factor = self._downsample_spin.value()
+
+            # Build boolean mask for the selected colour
+            mask = (self.image_uploaded == p_value)
+            if factor > 1:
+                mask = mask[::factor, ::factor, ::factor]
+
+            # Convert to (k,i,j) coordinate list (depth, height, width)
+            coords = np.column_stack(np.nonzero(mask))
+            if coords.size == 0:
+                raise ValueError(f"Colour {p_value} contains no voxels.")
+
+            # Re-scale back up if we down-sampled
+            if factor > 1:
+                coords = coords * factor
+
+            # Append any extra coordinates (e.g., boundary/connection voxels)
+            if extra_coords is not None and extra_coords.size > 0:
+                coords = np.vstack((coords, extra_coords))
+
+            # Limit number of points if requested (after merge)
+            max_pts = self._max_points_spin.value() * 1000
+            if coords.shape[0] > max_pts:
+                sel = np.random.choice(coords.shape[0], max_pts, replace=False)
+                coords = coords[sel]
+
+            # Assign colours – default colour for segment, black for extras
+            rgb_norm = np.array(self.rgb_colors[p_value], dtype=np.float32) / 255.0
+            base_colours = np.tile(rgb_norm, (coords.shape[0], 1)).astype(np.float32)
+            if extra_coords is not None and extra_coords.size > 0:
+                # Determine which entries correspond to extras (last ones before optional shuffle)
+                extra_len = extra_coords.shape[0]
+                base_colours[-extra_len:] = (0.0, 0.0, 0.0)  # black
+            colours = base_colours
+
+            # Centre & scale into ±0.5 cube (same scheme as boundary helper)
+            mins = coords.min(axis=0).astype(np.float32)
+            maxs = coords.max(axis=0).astype(np.float32)
+            center = (mins + maxs) / 2.0
+            dims = (maxs - mins)
+            longest = np.max(dims) if np.max(dims) > 0 else 1.0
+            centred = (coords.astype(np.float32) - center) / longest
+            pts = np.column_stack((centred[:, 2], centred[:, 1], centred[:, 0]))
+
+            return coords, pts, colours
         except Exception as e:
             raise e
 
@@ -857,17 +932,24 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
                 # other routines use the modified values.
                 self._current_data_results[p_value] = data_result
             
-            # Create 3D matrix from surface coordinates for export
-            # We need to reconstruct a 3D matrix from the surface coordinates
-            # For now, we'll create a simplified matrix based on the original image
-            color_mask = (self.image_uploaded == p_value).astype(int)
+            # ------------------------------------------------------------------
+            # Determine which 3-D matrix to save:
+            #    • Preferred: the full spine_matrix produced by Geneate_Estimations
+            #      (contains 0/1/2 values – interior, contact, background)
+            #    • Fallback: simple mask derived from image_uploaded
+            # ------------------------------------------------------------------
+            if hasattr(data_result, "spine_matrix") and data_result.spine_matrix is not None:
+                color_mask = data_result.spine_matrix  # already numpy array
+            else:
+                # Legacy fallback – will miss contact voxels
+                color_mask = (self.image_uploaded == p_value).astype(int)
             
             # Generate base filename
             base_name = f"color_P{p_value}"
             
-            # Save as text file
-            text_path = os.path.join(self.target_folder, f"{base_name}.txt")
-            Export_Spine_as_Text(text_path, color_mask, data_result)
+            # Save as CSV file (full matrix + metadata)
+            csv_path = os.path.join(self.target_folder, f"{base_name}.csv")
+            Export_Spine_as_Text(csv_path, color_mask, data_result)
             
             # Save as TIFF file
             tiff_path = os.path.join(self.target_folder, f"{base_name}.tiff")
@@ -876,7 +958,7 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             self._set_status(f"Color P{p_value} saved to {self.target_folder}")
             QtWidgets.QMessageBox.information(self, "Save Complete", 
                                             f"Color P{p_value} data saved successfully:\n"
-                                            f"• Text file: {base_name}.txt\n"
+                                            f"• CSV file: {base_name}.csv\n"
                                             f"• TIFF file: {base_name}.tiff")
             
         except Exception as e:
