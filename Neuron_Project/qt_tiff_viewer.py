@@ -30,10 +30,39 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QtWidgets.QHBoxLayout(central_widget)
 
+        # --------------------------------------------------------------
+        # Metadata panel (same style as Color panel) – will sit left in splitter
+        # --------------------------------------------------------------
+        self._metadata_widget = QtWidgets.QWidget()
+        self._metadata_widget.setMinimumWidth(220)
+        self._metadata_widget.setVisible(False)
+
+        # Wrap contents in a scroll area (like right panel)
+        _meta_scroll = QtWidgets.QScrollArea()
+        _meta_scroll.setWidgetResizable(True)
+        _meta_container = QtWidgets.QWidget()
+        self._metadata_form = QtWidgets.QFormLayout(_meta_container)
+        _meta_scroll.setWidget(_meta_container)
+
+        meta_layout = QtWidgets.QVBoxLayout(self._metadata_widget)
+        # Header label
+        _meta_header = QtWidgets.QLabel("Main Metadata")
+        _meta_header.setStyleSheet("QLabel { font-weight: bold; font-size: 14px; }")
+        _meta_header.setAlignment(QtCore.Qt.AlignCenter)
+        meta_layout.addWidget(_meta_header)
+        meta_layout.addWidget(_meta_scroll)
+
+        # Keep a dict of value-labels so we can update quickly
+        self._metadata_labels = {}
+
+        # (Connection to currentChanged will be added after _tab_widget is defined)
+
         # Main canvas area with tabs
         self._tab_widget = QtWidgets.QTabWidget()
         self._main_canvas = QtAdvanced3DCanvas(self)
         self._tab_widget.addTab(self._main_canvas, "Full Image")
+        # Now that _tab_widget exists, connect the signal
+        self._tab_widget.currentChanged.connect(self._on_tab_changed)
 
         # ------------------------------------------------------------------
         # Right-hand control panel (will be placed in a splitter)
@@ -42,15 +71,18 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         control_widget.setMinimumWidth(220)  # sensible minimum; user can resize wider
 
         # Use a horizontal splitter so the user can drag the divider
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(self._tab_widget)
-        splitter.addWidget(control_widget)
-# set stretch so the main canvas gets more space by default
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        # Order: metadata | main canvas | right control panel
+        self._splitter.addWidget(self._metadata_widget)
+        self._splitter.addWidget(self._tab_widget)
+        self._splitter.addWidget(control_widget)
+# set stretch so main canvas gets more space by default
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 3)
+        self._splitter.setStretchFactor(2, 1)
 
         # Add splitter to the main layout
-        main_layout.addWidget(splitter)
+        main_layout.addWidget(self._splitter)
 
         # Control tabs
         self._control_tabs = QtWidgets.QTabWidget()
@@ -195,6 +227,46 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self._pending_tiff_path = None
 
     # ------------------------------------------------------------------
+    # Tab change handler – ensure metadata visible only on Full Image tab
+    # ------------------------------------------------------------------
+    def _on_tab_changed(self, idx: int):
+        """Slot connected to QTabWidget.currentChanged.
+        Show metadata dock only when the first tab (Full Image) is active."""
+        if idx == 0:  # Full Image tab
+            if self.data_in_image is not None:
+                self._metadata_widget.setVisible(True)
+        else:
+            self._metadata_widget.setVisible(False)
+
+    # ------------------------------------------------------------------
+    # Metadata helpers
+    # ------------------------------------------------------------------
+    def _populate_metadata_panel(self):
+        """Fill the left-hand metadata dock with the values from
+        `self.data_in_image`.  Called after a new TIFF has been loaded."""
+        if self.data_in_image is None:
+            self._metadata_widget.setVisible(False)
+            return
+
+        # Clear previous contents
+        while self._metadata_form.count():
+            child = self._metadata_form.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        self._metadata_labels.clear()
+
+        for tag, attr in DataInImage.tag_dict.items():
+            key_lbl = QtWidgets.QLabel(tag)
+            val = getattr(self.data_in_image, attr)
+            val_str = "—" if val in (None, "") else str(val)
+            val_lbl = QtWidgets.QLabel(val_str)
+            self._metadata_form.addRow(key_lbl, val_lbl)
+            self._metadata_labels[tag] = val_lbl
+
+        # Reveal the dock now that content is available
+        self._metadata_widget.setVisible(True)
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
     def _set_status(self, text: str):
@@ -281,7 +353,10 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             # Build colour panel & initial full-image plot
             self._build_color_panel()
             self._create_voxel_plot(full_image=True)
-            
+
+            # Populate left-hand metadata panel
+            self._populate_metadata_panel()
+
             # Preprocess boundaries for faster loading (optional - can be toggled)
             if self._preprocess_checkbox.isChecked():
                 self._preprocess_boundaries_async()
@@ -532,6 +607,9 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
                 QtWidgets.QMessageBox.critical(self, "No TIFF Loaded", 
                                              "Please load a TIFF file first.")
                 return
+
+            # Hide metadata panel while working on a single colour
+            self._metadata_widget.setVisible(False)
             
             # Create DataInImage object for this specific color
             data_in_spine = DataInImage()
@@ -603,7 +681,8 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
 
         # Create tab widget for this color
         color_widget = QtWidgets.QWidget()
-        hbox = QtWidgets.QHBoxLayout(color_widget)
+        # Use splitter so metadata side panel can be resized/retracted
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal, color_widget)
 
         # ------------ Metadata panel (left) ------------
         meta_scroll = QtWidgets.QScrollArea()
@@ -611,7 +690,13 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         meta_container = QtWidgets.QWidget()
         meta_form = QtWidgets.QFormLayout(meta_container)
         meta_scroll.setWidget(meta_container)
-        meta_scroll.setFixedWidth(260)
+
+        # Wrap scroll area in a container so we can enforce a robust min width
+        meta_panel = QtWidgets.QWidget()
+        meta_panel.setMinimumWidth(220)
+        _meta_vbox = QtWidgets.QVBoxLayout(meta_panel)
+        _meta_vbox.setContentsMargins(0, 0, 0, 0)
+        _meta_vbox.addWidget(meta_scroll)
 
         # ------------------------------------------------------------
         # 1) Populate metadata directly from the values that Geneate_Estimations
@@ -624,13 +709,19 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         if not hasattr(self, '_metadata_editors'):
             self._metadata_editors = {}
         self._metadata_editors[p_value] = {}
+        read_only_tags = ("Number_of_Layers", "Image_Height", "Image_Width")
         for tag in DataInImage.tag_dict.keys():
             attr_label = QtWidgets.QLabel(tag)
-            editor = QtWidgets.QLineEdit()
-            editor.setMinimumWidth(120)
-            meta_form.addRow(attr_label, editor)
-            label_widgets[tag] = editor
-            self._metadata_editors[p_value][tag] = editor
+            if tag in read_only_tags:
+                # Show static text for non-editable core dimensions
+                display_widget = QtWidgets.QLabel()
+            else:
+                display_widget = QtWidgets.QLineEdit()
+                display_widget.setMinimumWidth(120)
+
+            meta_form.addRow(attr_label, display_widget)
+            label_widgets[tag] = display_widget
+            self._metadata_editors[p_value][tag] = display_widget
 
         # Fill labels with computed data
         for tag, attr in DataInImage.tag_dict.items():
@@ -655,8 +746,14 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         canvas = QtAdvanced3DCanvas(color_widget)
         canvas.set_points(pts, colours)
 
-        hbox.addWidget(meta_scroll)
-        hbox.addWidget(canvas, 1)
+        splitter.addWidget(meta_panel)
+        splitter.addWidget(canvas)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+
+        # Place splitter in the colour tab layout
+        layout = QtWidgets.QHBoxLayout(color_widget)
+        layout.addWidget(splitter)
 
         # Add tab to main tab widget
         tab_title = f"Color P{p_value}"

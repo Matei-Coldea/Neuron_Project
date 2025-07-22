@@ -563,49 +563,47 @@ def Open_TIFF_fig(tiff_path):
             # for index, color in enumerate(rgb_colors):
             #    print(f'Index {index}: RGB {color}')
 
+            # --------------------------------------------------------------
+            # Robust extraction of TIFF tag 270 (ImageDescription).
+            # Pillow returns different types depending on the file: str,
+            # bytes, or a tuple/list of bytes – adapt to all.
+            # --------------------------------------------------------------
             try:
-                img.tag.get(270)  # This step is mandatory. Do not remove.
-                raw_value = img.tag.tags[270]
-            except:
-                raw_value = 0
+                raw_value = img.tag_v2.get(270)
+            except Exception:
+                raw_value = None
 
-            # raw_value = img.tag.get(270)
-            # If the raw value is a string and you expect it to be a JSON object
+            # The value may come back as a tuple/list with a single element.
+            if isinstance(raw_value, (list, tuple)) and len(raw_value) == 1:
+                raw_value = raw_value[0]
+
+            # If it is bytes, decode to UTF-8 (TIFF specs recommend ASCII).
+            if isinstance(raw_value, bytes):
+                try:
+                    raw_value = raw_value.decode("utf-8")
+                except UnicodeDecodeError:
+                    raw_value = raw_value.decode("latin-1", errors="ignore")
+
+            # Now attempt JSON parsing – keep a None fallback on failure.
+            tag_dict = {}
             try:
-                # Aqui, alterar aqui!!
-                # Attempt to parse the JSON string
-                tag_dict = json.loads(raw_value)
+                if isinstance(raw_value, str) and raw_value.strip().startswith("{"):
+                    tag_dict = json.loads(raw_value)
+            except (json.JSONDecodeError, TypeError) as _e:
+                print(f"Warning: failed to parse metadata JSON in tag 270 – {_e}")
 
-                # See Class_Data_In_Image.py
+            # Map JSON keys onto DataInImage attributes if available
+            if tag_dict:
                 data = data_in_image.tag_dict
                 for key, value in data.items():
-                    # Extract values from the dictionary
                     if key in tag_dict:
-                        # data_in_image.key = tag_dict[key]
                         setattr(data_in_image, value, tag_dict[key])
 
-                '''
-                # See Class_Data_In_Image.py
-                # Extract values from the dictionary
-                if "Resolution_Unit" in tag_dict:
-                    data_in_image.resolution_unit = tag_dict["Resolution_Unit"]
-
-                data_in_image.description = tag_dict.get("Description", None)
-                data_in_image.x_resolution = tag_dict.get('X_Resolution', None)
-                data_in_image.y_resolution = tag_dict.get("Y_Resolution", None)
-                data_in_image.z_resolution = tag_dict.get("Z_Resolution", None)
-                data_in_image.resolution_unit = tag_dict.get("Resolution_Unit", None)
-                data_in_image.volume = tag_dict.get("Volume", None)
-                data_in_image.surface = tag_dict.get("Surface", None)
-                data_in_image.num_layers = tag_dict.get("Number_of_Layers", None)
-                data_in_image.height = tag_dict.get("Image_Height", None)
-                data_in_image.width = tag_dict.get("Image_Width", None)
-                '''
-
-            except (json.JSONDecodeError, TypeError):
-                # Handle cases where the raw_value isn't valid JSON or is not a string
-                # Failed to parse JSON from tag 270
-                print("Unable to Upload Data Embedded in the Image.")
+            else:
+                if raw_value is not None:
+                    print("No JSON metadata found in tag 270 – showing defaults.")
+                else:
+                    print("Tag 270 (ImageDescription) not present – metadata unavailable.")
 
             # Prepare an empty list to store each layer's data
             layers = []
@@ -806,26 +804,28 @@ def Geneate_Estimations(spine_number, base_name, data_in_spine):
                             spine_3D_edge[k + 2][i + 1][j + 1] = 2
                             spine_3D[k + 2][i + 1][j + 1] = 2
 
-                    if k + min_ijk[0] != 0:  # i min
+                    # i-dimension (rows) boundary checks
+                    if i + min_ijk[0] != 0:  # i min
                         if (image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0] - 1][
                                 j + min_ijk[1]] != spine_number) and (
                                 image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0] - 1][j + min_ijk[1]] != 0):
                             spine_3D[k + 1][i][j + 1] = 2
                             spine_3D_edge[k + 1][i][j + 1] = 2
-                    if k + min_ijk[0] != height - 1:  # i max
+                    if i + min_ijk[0] != height - 1:  # i max
                         if (image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0] + 1][
                                 j + min_ijk[1]] != spine_number) and (
                                 image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0] + 1][j + min_ijk[1]] != 0):
                             spine_3D_edge[k + 1][i + 2][j + 1] = 2
                             spine_3D[k + 1][i + 2][j + 1] = 2
 
-                    if k + min_ijk[1] != 0:  # j min
+                    # j-dimension (columns) boundary checks
+                    if j + min_ijk[1] != 0:  # j min
                         if (image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0]][
                                 j + min_ijk[1] - 1] != spine_number) and (
                                 image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0]][j + min_ijk[1] - 1] != 0):
                             spine_3D[k + 1][i + 1][j] = 2
                             spine_3D_edge[k + 1][i + 1][j] = 2
-                    if k + min_ijk[1] != width - 1:  # k max
+                    if j + min_ijk[1] != width - 1:  # j max
                         if (image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0]][
                                 j + min_ijk[1] + 1] != spine_number) and (
                                 image_uploaded_edge[k + min_ijk[2]][i + min_ijk[0]][j + min_ijk[1] + 1] != 0):
