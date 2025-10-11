@@ -13,6 +13,7 @@ from Extract_Figures_FV import (Export_Spine_as_Text, Export_Spine_as_tiff, Open
                                 Geneate_Estimations, Plot_matrix_scatter, Plot_3D_Matrix_Line_Test,
                                 set_matplotlib_display, get_matplotlib_display_status)
 import Extract_Figures_FV
+import platform
 
 
 class QtTIFFViewer3D(QtWidgets.QMainWindow):
@@ -279,10 +280,13 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self._set_status("Caches cleared due to settings change")
 
     def _select_target_folder(self):
+        # Use Path for cross-platform compatibility
+        default_dir = str(Path.home())
         folder = QtWidgets.QFileDialog.getExistingDirectory(
-            self, "Select Target Folder for Saved Files", str(Path.home()))
+            self, "Select Target Folder for Saved Files", default_dir)
         if folder:
-            self.target_folder = folder
+            # Normalize path for the current platform
+            self.target_folder = os.path.normpath(folder)
             # Show shortened path in label
             short_path = "..." + folder[-40:] if len(folder) > 40 else folder
             self._target_folder_label.setText(f"Target: {short_path}")
@@ -290,21 +294,28 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
             self._set_status(f"Target folder set: {folder}")
 
     def _open_file_dialog(self):
+        # Use Path for cross-platform compatibility
+        default_dir = str(Path.home())
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Select 3D Indexed-colour TIFF", str(Path.home()),
+            self, "Select 3D Indexed-colour TIFF", default_dir,
             "TIFF Images (*.tiff *.tif)")
         if filename:
+            # Normalize path for the current platform
+            filename = os.path.normpath(filename)
             self._load_tiff(filename)
 
     # --------------------------------------------------------------
     # New path-selection helpers (dropdown panel)
     # --------------------------------------------------------------
     def _select_path_dialog(self):
+        # Use Path for cross-platform compatibility
+        default_dir = str(Path.home())
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Select 3D Indexed-colour TIFF", str(Path.home()),
+            self, "Select 3D Indexed-colour TIFF", default_dir,
             "TIFF Images (*.tiff *.tif)")
         if filename:
-            self._pending_tiff_path = filename
+            # Normalize path for the current platform
+            self._pending_tiff_path = os.path.normpath(filename)
             short_path = "..." + filename[-40:] if len(filename) > 40 else filename
             self._selected_path_label.setText(short_path)
             self._selected_path_label.setStyleSheet("QLabel { color: black; font-size: 10px; }")
@@ -328,6 +339,9 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
         self._set_status("Loading …")
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
+            # Normalize path for cross-platform compatibility
+            path = os.path.normpath(path)
+            
             # Use Import_3D_segment_from_tiff_figure for simpler loading
             print(f"Loading TIFF using Extract_Figures_FV.Import_3D_segment_from_tiff_figure(): {path}")
             
@@ -413,9 +427,8 @@ class QtTIFFViewer3D(QtWidgets.QMainWindow):
                             print(f"Failed to preprocess color {idx}: {e}")
                             continue
                             
-                def update_status():
-                    self._set_status("Background preprocessing complete")
-                QtCore.QMetaObject.invokeMethod(self, update_status, QtCore.Qt.QueuedConnection)
+                # Use QTimer for cross-platform thread-safe UI updates
+                QtCore.QTimer.singleShot(0, lambda: self._set_status("Background preprocessing complete"))
                 
             except Exception as e:
                 print(f"Background preprocessing error: {e}")

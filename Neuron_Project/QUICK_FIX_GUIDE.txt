@@ -1,0 +1,200 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                  3D TIFF VIEWER - QUICK FIX GUIDE                            ║
+║                  Print or bookmark this for quick reference                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ WINDOWS USERS                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Problem: Application crashes immediately
+Fix:    1. Right-click run_windows.bat → Run as administrator
+        2. Update graphics drivers from manufacturer website
+        3. Windows Settings → System → Display → Graphics settings
+           → Add python.exe → Set to "High performance"
+
+Problem: ImportError or ModuleNotFoundError
+Fix:    1. Open Command Prompt in project folder
+        2. venv\Scripts\activate
+        3. pip install -r requirements.txt --force-reinstall
+
+Problem: "Cannot create OpenGL context"
+Fix:    1. Update graphics drivers (Intel/NVIDIA/AMD)
+        2. Right-click python.exe → Properties → Compatibility
+           → Disable display scaling override
+        3. Reboot after driver update
+
+Quick Start:
+    → Double-click: run_windows.bat
+    → Or PowerShell: .\run_windows.ps1
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ macOS USERS                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Problem: "Command not found: python"
+Fix:    Use python3 instead:
+        python3 -m venv venv
+        source venv/bin/activate
+        python3 main.py
+
+Problem: Permission denied
+Fix:    chmod +x run_unix.sh
+        ./run_unix.sh
+
+Problem: "developer cannot be verified" security warning
+Fix:    System Preferences → Security & Privacy
+        → Click "Open Anyway" at bottom
+
+Problem: Missing Xcode tools
+Fix:    xcode-select --install
+
+Quick Start:
+    → Terminal: ./run_unix.sh
+    → Or: source venv/bin/activate && python main.py
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ LINUX USERS                                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Problem: "Cannot open display" or blank window
+Fix:    echo $DISPLAY    # Should show :0 or :1
+        If empty: export DISPLAY=:0
+        Or: Install X11 server
+
+Problem: OpenGL libraries missing
+Fix:    Debian/Ubuntu:
+        sudo apt-get install libgl1-mesa-glx libglu1-mesa mesa-utils
+        
+        Fedora:
+        sudo dnf install mesa-libGL mesa-libGLU
+        
+        Arch:
+        sudo pacman -S mesa glu
+
+Problem: Qt platform plugin error
+Fix:    sudo apt-get install libxcb-xinerama0 libxcb-cursor0
+        pip install --upgrade --force-reinstall PySide6
+
+Problem: Running over SSH
+Fix:    ssh -X user@hostname
+        export DISPLAY=:0
+
+Quick Start:
+    → Terminal: ./run_unix.sh
+    → Or: source venv/bin/activate && python main.py
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ COMMON ISSUES (ALL PLATFORMS)                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Problem: "numpy.dtype size changed"
+Fix:    pip install --upgrade numpy scikit-image --no-cache-dir
+
+Problem: Application loads but is very slow
+Fix:    In the app:
+        Open Figure → Performance Settings
+        → Set Downsample to 2-4
+        → Set Max points to 100-200
+
+Problem: Can't find venv folder
+Fix:    Create it first:
+        python -m venv venv        (Windows/Linux)
+        python3 -m venv venv       (macOS)
+
+Problem: Wrong Python version (need 3.8+)
+Fix:    python --version  or  python3 --version
+        Download from: https://www.python.org/downloads/
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ VERIFICATION COMMANDS                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Check Python:
+    python --version        (should be 3.8 or higher)
+
+Check Dependencies:
+    python -c "import PySide6; print('OK')"
+    python -c "import numpy; print('OK')"
+    python -c "import OpenGL; print('OK')"
+
+Check OpenGL (Windows):
+    python -c "from OpenGL.GL import *; print('OpenGL OK')"
+
+Check OpenGL (Linux):
+    glxinfo | grep "OpenGL version"
+
+Check GPU (Windows):
+    wmic path win32_VideoController get name
+
+Check GPU (macOS):
+    system_profiler SPDisplaysDataType | grep Chipset
+
+Check GPU (Linux):
+    lspci | grep VGA
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ EMERGENCY RESET                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+If nothing works, nuclear option:
+
+1. Delete venv folder
+2. Recreate environment:
+   
+   Windows:
+   python -m venv venv
+   venv\Scripts\activate
+   pip install -r requirements.txt
+   
+   macOS/Linux:
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+
+3. Reboot computer
+4. Update graphics drivers
+5. Try again
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ GETTING HELP                                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Before asking for help, collect this info:
+
+1. Operating System and version
+2. Python version (python --version)
+3. GPU/Graphics card name
+4. Full error message
+5. Output of: python main.py 2>&1 | tee error_log.txt
+
+Detailed guides:
+    → README.md - User guide and quick start
+    → CROSS_PLATFORM_GUIDE.md - Complete troubleshooting
+    → CHANGES_SUMMARY.md - Technical changes
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ PERFORMANCE TIPS                                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+For FASTER loading (large files):
+    ✓ Increase Downsample to 2-4
+    ✓ Reduce Max points to 100-200k
+    ✗ Disable Background preprocessing
+
+For BETTER quality (small files):
+    ✓ Set Downsample to 1
+    ✓ Increase Max points to 500k
+    ✓ Enable Background preprocessing
+    ✓ Enable Use legacy edge detection
+
+For SMOOTH interaction:
+    ✓ Use dedicated GPU (not integrated)
+    ✓ Close other 3D applications
+    ✓ Update graphics drivers
+    ✓ Reduce Max points if laggy
+
+═══════════════════════════════════════════════════════════════════════════════
+   Still stuck? See CROSS_PLATFORM_GUIDE.md for detailed solutions
+═══════════════════════════════════════════════════════════════════════════════
+

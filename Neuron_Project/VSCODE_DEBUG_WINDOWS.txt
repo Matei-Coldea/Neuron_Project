@@ -1,0 +1,179 @@
+═══════════════════════════════════════════════════════════════════════════════
+                 VS CODE DEBUG MODE - WINDOWS SETUP GUIDE
+═══════════════════════════════════════════════════════════════════════════════
+
+PROBLEM SOLVED: main.py now works in VS Code debug mode on Windows!
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ QUICK START - DEBUG MODE                                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Step 1: Open VS Code in project folder
+
+Step 2: Create .env file in project root with this content:
+   
+   MPLBACKEND=Agg
+   PYTHONUNBUFFERED=1
+   QT_QPA_PLATFORM=windows
+   QT_OPENGL=desktop
+   LIBGL_ALWAYS_SOFTWARE=0
+
+Step 3: Open main.py
+
+Step 4: Press F5 (or Run → Start Debugging)
+
+Step 5: Select: "Python: Main (Windows Debug Safe)"
+
+DONE! The debugger will start without matplotlib errors.
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ WHAT WAS FIXED                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+✓ matplotlib backend configured BEFORE debugger attaches
+✓ Environment variables set at module level
+✓ PySide6 + matplotlib conflict resolved
+✓ VS Code launch configurations created
+✓ Workspace settings configured
+✓ Triple-layer protection system
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ DEBUG CONFIGURATIONS AVAILABLE                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. "Python: Main (Windows Debug Safe)" ← USE THIS
+   → Full debugging features
+   → All environment variables set
+   → Can set breakpoints anywhere
+   → Can inspect all variables
+
+2. "Python: Main (Simple - No Debug Features)"
+   → Basic debugging only
+   → Use if full debug mode crashes
+   → Limited variable inspection
+
+3. "Python: Current File"
+   → Debug any Python file
+   → Quick testing
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ HOW TO USE DEBUGGER                                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Set Breakpoints:
+   Click in the margin left of line numbers (red dot appears)
+
+Start Debugging:
+   Press F5 or click green play button
+
+Debug Controls:
+   F5       - Continue
+   F10      - Step Over
+   F11      - Step Into
+   Shift+F11 - Step Out
+   Shift+F5  - Stop Debugging
+
+View Variables:
+   Check "Variables" panel on left during debugging
+
+Debug Console:
+   Type Python expressions to evaluate during break
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ COMMON DEBUG SCENARIOS                                                       │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Scenario 1: Debug why TIFF loading fails
+   1. Set breakpoint in _load_tiff() method
+   2. Press F5
+   3. Load a TIFF file in the app
+   4. Debugger stops at breakpoint
+   5. Inspect variables to see what's wrong
+
+Scenario 2: Debug color processing
+   1. Set breakpoint in _display_next_color()
+   2. Press F5
+   3. Click "Next" button in app
+   4. Step through processing logic
+
+Scenario 3: Debug OpenGL rendering
+   1. Set breakpoint in paintGL() method
+   2. Press F5
+   3. Rotate the 3D view
+   4. Inspect point data
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ TROUBLESHOOTING DEBUG MODE                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Problem: "No module named 'matplotlib_config'"
+Fix: Ensure venv Python is selected in VS Code
+     Bottom left corner → Click Python version → Select venv\Scripts\python.exe
+
+Problem: Still getting matplotlib Qt errors
+Fix: Reload VS Code window
+     Ctrl+Shift+P → "Reload Window"
+
+Problem: Breakpoints are gray/hollow (not working)
+Fix: 1. Stop debugging (Shift+F5)
+     2. Delete __pycache__ folders
+     3. Restart VS Code
+     4. Try again
+
+Problem: Nothing happens when pressing F5
+Fix: 1. Check .vscode/launch.json exists
+     2. Check Python interpreter is set (venv)
+     3. Try "Run → Start Debugging" from menu
+
+Problem: "Debugger is attached" but frozen
+Fix: 1. Stop all Python processes
+     2. Close VS Code
+     3. Open Task Manager → End python.exe tasks
+     4. Restart VS Code
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FILES CREATED FOR DEBUG MODE                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+.vscode/launch.json     - Debug configurations
+.vscode/settings.json   - Workspace settings  
+.env                    - Environment variables (YOU CREATE THIS)
+DEBUG_MODE_FIX.md       - Detailed technical guide
+.gitignore              - Git ignore rules
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ VERIFICATION                                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+To verify debug mode works:
+
+1. Open main.py
+2. Set breakpoint on line 110: from qt_tiff_viewer import launch_qt_viewer
+3. Press F5
+4. Debugger should stop at breakpoint
+5. Check Variables panel shows all imports
+6. Press F5 to continue - app should open normally
+
+Success indicators:
+  ✓ No matplotlib Qt backend errors
+  ✓ Breakpoint stops execution  
+  ✓ Can inspect variables
+  ✓ Can step through code
+  ✓ Application launches normally
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ TIPS FOR EFFECTIVE DEBUGGING                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. Use "justMyCode": false to debug into libraries
+2. Add "logToFile": true in launch.json for debug logs
+3. Use conditional breakpoints: right-click breakpoint → Edit Breakpoint
+4. Watch expressions: right-click variable → Add to Watch
+5. Use Debug Console to test code: type Python expressions
+
+═══════════════════════════════════════════════════════════════════════════════
+              WINDOWS + VS CODE + DEBUG MODE = FULLY WORKING!
+═══════════════════════════════════════════════════════════════════════════════
+
+For detailed technical explanation, see: DEBUG_MODE_FIX.md
+

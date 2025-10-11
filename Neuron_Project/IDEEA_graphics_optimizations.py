@@ -1,4 +1,11 @@
 import numpy as np
+
+# Configure matplotlib backend for PySide6 compatibility
+import os
+os.environ['MPLBACKEND'] = 'Agg'
+import matplotlib
+matplotlib.use('Agg', force=True)
+
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import plotly.graph_objects as go

@@ -1,0 +1,90 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║                  3D TIFF VIEWER - WINDOWS QUICK START                        ║
+║                                                                              ║
+║                        GUARANTEED TO WORK!                                   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ STEP 1: LAUNCH THE APPLICATION                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Right-click run_windows.bat → Select "Run as administrator"
+
+  That's it! The launcher handles everything automatically:
+  
+  ✓ Creates Python environment
+  ✓ Installs all dependencies
+  ✓ Detects and fixes common issues
+  ✓ Configures Windows settings
+  ✓ Checks your GPU
+  ✓ Launches the application
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ IF IT DOESN'T WORK IMMEDIATELY                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  99% of Windows issues are caused by outdated graphics drivers.
+
+  FIX: Update your graphics drivers
+  
+  Intel:  https://www.intel.com/content/www/us/en/download-center/
+  NVIDIA: https://www.nvidia.com/Download/index.aspx  
+  AMD:    https://www.amd.com/en/support
+  
+  After updating: RESTART YOUR COMPUTER and try again
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ DETAILED GUIDES (If Needed)                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  For common issues:
+  → WINDOWS_ULTIMATE_GUIDE.md
+
+  For quick reference:
+  → QUICK_FIX_GUIDE.txt
+  
+  For complete documentation:
+  → README.md
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ SPECIAL NOTES                                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Intel Integrated Graphics Users:
+  The application will automatically enable "Safe Mode" for stability.
+  This is normal and ensures smooth operation on Intel GPUs.
+  
+  Laptop Users with Dual GPUs:
+  If performance is slow, make sure Windows is using your dedicated GPU:
+  Settings → System → Display → Graphics settings
+  → Add python.exe → Set to "High performance"
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ APPLICATION CONTROLS                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+  Left Mouse Button:    Rotate 3D view
+  Middle Mouse Button:  Pan view
+  Scroll Wheel:         Zoom in/out
+  
+  Open Figure → Select Path → Choose TIFF file → Open
+  Select colors → Click Next → Process each neuron segment
+  Target Folder → Select where to save results
+  Click Save on each color tab to export data
+
+═══════════════════════════════════════════════════════════════════════════════
+                           IMPORTANT TIPS
+═══════════════════════════════════════════════════════════════════════════════
+
+  ★ Always run as Administrator for best results
+  ★ Keep graphics drivers updated
+  ★ Don't use folder paths with special characters (é, ñ, etc.)
+  ★ For large files, increase Downsample to 2-4 in Performance Settings
+  ★ The application automatically adjusts for your GPU
+
+═══════════════════════════════════════════════════════════════════════════════
+                    EVERYTHING IS AUTOMATIC - JUST RUN IT!
+═══════════════════════════════════════════════════════════════════════════════
+

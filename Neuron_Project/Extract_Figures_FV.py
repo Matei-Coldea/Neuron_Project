@@ -1,4 +1,11 @@
 import numpy as np
+
+# Configure matplotlib backend BEFORE importing pyplot to prevent PySide6 conflicts
+import os
+os.environ['MPLBACKEND'] = 'Agg'  # Use non-interactive backend
+import matplotlib
+matplotlib.use('Agg', force=True)  # Force Agg backend for PySide6 compatibility
+
 import matplotlib.pyplot as plt
 # from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import tifffile
