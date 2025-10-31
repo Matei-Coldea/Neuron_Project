@@ -21,18 +21,18 @@ def check_dependencies():
     for module, description in required_modules:
         try:
             __import__(module)
-            print(f"✓ {description}")
+            print(f"[OK] {description}")
         except ImportError:
-            print(f"✗ {description}")
+            print(f"[MISSING] {description}")
             missing.append(description)
     
     if missing:
-        print(f"\n❌ Missing dependencies: {', '.join(missing)}")
+        print(f"\n[ERROR] Missing dependencies: {', '.join(missing)}")
         print("Please install them with:")
         print("pip install -r requirements.txt")
         return False
     
-    print("✓ All dependencies available")
+    print("[OK] All dependencies available")
     return True
 
 def main():
@@ -51,14 +51,14 @@ def main():
     try:
         print("Importing QtTIFFViewer3D...")
         from qt_tiff_viewer import launch_qt_viewer
-        print("✓ QtTIFFViewer3D imported successfully")
+        print("[OK] QtTIFFViewer3D imported successfully")
 
         print("Launching Qt viewer...")
         launch_qt_viewer()
-        print("✓ Qt viewer closed")
+        print("[OK] Qt viewer closed")
         
     except ImportError as e:
-        print(f"✗ Import error: {e}")
+        print(f"[ERROR] Import error: {e}")
         print("Please install missing dependencies:")
         print("pip install -r requirements.txt")
         print("\nFor troubleshooting, run:")
@@ -66,7 +66,7 @@ def main():
         input("Press Enter to exit...")
         return 1
     except Exception as e:
-        print(f"✗ Error starting application: {e}")
+        print(f"[ERROR] Error starting application: {e}")
         traceback.print_exc()
         print("\nTroubleshooting:")
         print("1. Run 'python test_fixed_viewer.py' to test OpenGL")
